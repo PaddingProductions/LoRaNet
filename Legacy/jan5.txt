@@ -1,0 +1,26 @@
+This will be a quick overview & report of what I've worked on independently regarding the LoRa modules.
+A quick summary:
+> I've gotten the LoRa modules to Transmit at a set interval, while being able to Recieve at any time (with some inconconsistancies, refer to the following notes). 
+> I've implemented the program to have an adaptable 'packet-like' structure, meaning changes and expansion on the format & volume of the packets transmitted will be trivial. 
+> I've integrated the DHT-22 (temp & humidity) sensor into the nodes. I have the MQ-2 (smoke) sensor on-hand, will get that on ASAP. 
+> I've also implemented the gateway code, which simply HTTP POSTs any packets to a given server.
+> I currently only have a dummy HTTP server, since the DB API is needed for a complete one.
+
+The following will be some niche details:
+-Regarding the Rx (receive) inconsistancies:
+> Firstly, some context. The LoRa module can only run on RX (receive) or TX (transmit) mode at once, so by that, it will not be able to receive a packet right when it's transmitting.
+> Now I am using a call-back like implementation for RX (this 'call-back' is triggered by a pin on the module), and this will only be activated on RX mode.
+> Secondly, some observations while experimenting/debugging. After a TX operation, you would intutively want to switch back to RX mode ASAP, 
+  but as it turns out, you need to wait a good ~100ms before switching, else it would not function as expected. I don't know why, but online forums find a similar observation. 
+> So, that leaves a window within which packets may not be received (lost), thus the inconsistancies. 
+> Is this theory sound? well, I'm doubtful that a 100ms window every 3s (my current testing TX interval) will cause such a noticable inconsistancy. 
+> I'll try to resolve this sometime, maybe by ditching the call-back impl for something else.
+> As a side note: current packet retension rate is ~80-90%, though it seems to drop off after some 300 packets, might be a memory issue?.
+
+-Other notes:
+> Packet Size limit: idk :p (afaik, >256bytes), some more research will be needed, but should we ever reach this, there is a lot of room for compression improvements.
+> Encryption: Something I want to try adding if we have the time, as I think it will be a good selling point.
+> Things not tested or known: Battery, Sensors, Range, Function under various topologies (I currently only have 2 LoRa modules, this is definitely priority#1). 
+> Engineering Notebook: I've mentioned this before but try to keep a log of what you've done -- on some random doc will do --. 
+  From what I got from Bharghav's brother, as well as the website (citation needed), we need to make an Engineering Notebook, basically documenting the 'engineering process.' 
+  Here's Bhargav's brother's for reference: https://github.com/ShashankVenkatramani/AsthmaAid/blob/master/docs/engineeringNotebook.pdf
