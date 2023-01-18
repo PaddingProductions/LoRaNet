@@ -5,7 +5,9 @@
 #include <AESLib.h>
 
 #define QUEUE_SIZE 10
-#define TX_INTERVAL 3000
+#define ADJ_PING_INTERVAL 30000
+#define ADJ_LIST_SIZE 10
+#define TX_INTERVAL 10000
 #define TICK_INTERVAL 100
 #define RANDOM_RANGE 2000
 
@@ -17,7 +19,14 @@ DHT dht(DHTPIN, DHTTYPE);
 
 Map packetIdRecord;
 uint8_t queueCnt = 0;
-Packet* forwardQueue[QUEUE_SIZE];
+uint16_t forwardLen[QUEUE_SIZE];
+char* forward[QUEUE_SIZE];
+
+uint8_t adjacencies_cnt = 0;
+uint16_t adjacencies[ADJ_LIST_SIZE];
+uint16_t adj_ping_tick = 0;
+
+uint16_t packets_lost = 0;
 
 uint16_t nodeId;
 
@@ -51,48 +60,65 @@ void setup() {
 
 // Callback func on LoRa receive
 void onReceive (int packetSize) {
-  // Parse Packet
-  Packet* packet = new Packet();
-
-  if (Lib::parsePacket(packetSize, packet)) {
-    Serial.print("ERR: invalid MSG format, dropping.\n");
-    goto ERR;
+  // Parse msg
+  uint8_t header;
+  uint16_t srcId;
+  uint16_t pId;
+  if (!Lib::parsePacket(packetSize, &header, &srcId, &pId)) {
+    return;
   }
-  Serial.print("Parsed: ");
-  Lib::printPacket(packet);
-  Serial.println();
 
+  Serial.print("header: ");
+  Serial.print(header);
+  Serial.print(", srcId: "); Serial.print(srcId);
+  Serial.print(", pId: "); Serial.print(pId);
+  Serial.print(", ");
   // If MSG srcID is self, meaning echo, drop.
-  if (packet->srcId == nodeId) {
-    Serial.print("Echoed packet, dropping.\n");
-    goto ERR;
+  if (srcId == nodeId) {
+    Serial.print("Echoed packet, dropping.\n"); return;
   }
-  // If MSG ID is repeat or outdated, drop.
-  int lastPktId = packetIdRecord.get(packet->srcId);
-  Serial.print("LastPktId:");
-  Serial.print(lastPktId); 
-  Serial.print(". ");
-  
-  if (lastPktId != -1 && lastPktId >= packet->id) {
-    Serial.print("Repeated or outdated packet received, dropping.\n");
-    goto ERR;
-  }
-  Serial.print("New Msg. Queuing for forward. ");
 
+  // If MSG ID is repeat or outdated, drop.
+  int lastPktId = packetIdRecord.get(srcId);
+  Serial.print("LastPktId:"); Serial.print(lastPktId); Serial.print(". ");
+  if (lastPktId != -1 && lastPktId >= pId) {
+    Serial.print("Outdated packet, dropping.\n"); return;
+  }
+  // keep track of packets lost
+  if (lastPktId != -1) 
+    packets_lost += pId - lastPktId -1;
   // Set new latest Pkt Id
-  packetIdRecord.set(packet->srcId, packet->id);
+  packetIdRecord.set(srcId, pId);
+
+  // Add to adjacencies list
+  {
+    bool b = true;
+    for (int i=0; i<adjacencies_cnt; i++) 
+      if (adjacencies[i] == srcId) 
+        b = false;
+    if (b && adjacencies_cnt < ADJ_LIST_SIZE) 
+      adjacencies[adjacencies_cnt++] = srcId;
+  }
 
   // Store in queue
+  Serial.print("New Msg. Queuing for forward. ");
   if (queueCnt >= QUEUE_SIZE) {
-    Serial.print("Queue full, dropping.\n");
-    goto ERR;
+    Serial.print("Queue full, dropping.\n"); return;
   }
-  forwardQueue[queueCnt++] = packet;
+  
+
+  // Copy from msg buf.
+  char* buf = (char*) malloc(packetSize); 
+  memcpy(buf, msgbuf, packetSize);
+  Serial.print("Queued: [");
+  for (int i=0; i<packetSize; i++) {
+    Serial.print((uint8_t) buf[i]);
+    Serial.print(", ");
+  }
+  Serial.println("]");  forwardLen[queueCnt++] = packetSize;
+  forward[queueCnt++] = buf;
+
   Serial.println();
-  return;
-ERR:
-  free(packet);
-  return;
 }
 
 
@@ -120,10 +146,17 @@ void loop() {
     LoRa.beginPacket();
     LoRa.write(msg, len);
     LoRa.endPacket();
-   
-    Serial.print("Sent MSG: ");
-    Lib::printPacket(&packet);
-    Serial.println();
+
+    
+    Serial.print("MSG: [");
+    for (int i=0; i<len; i++) {
+      Serial.print((uint8_t) msg[i]);
+      Serial.print(", ");
+    }
+    Serial.println("]");
+
+    Serial.print("Packets Lost: ");
+    Serial.println(packets_lost);
 
     free(msg);
 
@@ -131,35 +164,69 @@ void loop() {
     LoRa.receive();
     tick = (TX_INTERVAL + random(0, RANDOM_RANGE)) / TICK_INTERVAL;
   }
-  
+
+  // TX if adjacency list ping tick is up. 
+  if (adj_ping_tick-- == 0) {
+    uint16_t len = adjacencies_cnt;
+    char* msg = Lib::constructAdjPkt (nodeId, packetId++, adjacencies, &len);
+
+    delay(100);
+    LoRa.beginPacket();
+    LoRa.write(msg, len);
+    LoRa.endPacket();
+   
+    Serial.print("Sent ADJ list ping: [");
+    for (int i=0; i<adjacencies_cnt; i++) {
+      Serial.print(adjacencies[i]);
+      Serial.print(", ");
+    }
+    Serial.println("]");
+
+    
+    Serial.print("MSG: [");
+    for (int i=0; i<len; i++) {
+      Serial.print((uint8_t) msg[i]);
+      Serial.print(", ");
+    }
+    Serial.println("]");
+    
+
+    free(msg);
+    delay(100);
+    LoRa.receive();
+    adjacencies_cnt = 0;
+    adj_ping_tick = (ADJ_PING_INTERVAL + random(0, RANDOM_RANGE)) / TICK_INTERVAL;
+  }
+
   // If queue
   if (queueCnt) 
     delay(100);
   for (int i=0; i<queueCnt; i++) {
-    
-    uint16_t len;
-    char* buf = Lib::encodePacket(forwardQueue[i], &len);
+    char* msg = forward[i];
+    uint16_t len = forwardLen[i];
 
-    Serial.println(len);
-    for (int i=0; i<len; i++) 
-      Serial.print(buf[i]);
-    Serial.println();
   
+    Serial.print("Forwarded: len: ");
+    Serial.print(len);
+    Serial.print(", [");
+    for (int i=0; i<len; i++) {
+      Serial.print((uint8_t) msg[i]);
+      Serial.print(", ");
+    }
+    Serial.println("]");
+    
+    
     LoRa.beginPacket();
-    LoRa.write(buf, len);
+    LoRa.write(msg, len);
     LoRa.endPacket();
 
     // Dealloc Packet Object & String
-    free(buf);
-
-    free(forwardQueue[i]);
+    free(forward[i]);
   }
   if (queueCnt) {
     queueCnt = 0;
     delay(100);
     LoRa.receive();
-
-    Serial.print("Post-Forward RAM delta: ");
   }
   delay(TICK_INTERVAL);
 }
