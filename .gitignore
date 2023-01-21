@@ -3,3 +3,6 @@
 Legacy/pinet-proto1
 Legacy/pinet-proto1/*
 
+proto/gateway-lib-proto/node_modules/*
+proto/gateway-lib-proto/package-lock.json
+proto/gateway-lib-proto/package.json

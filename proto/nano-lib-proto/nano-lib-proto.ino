@@ -1,12 +1,11 @@
 #include <SPI.h>
 #include <LoRa.h>
-#include "LoRaNet.h";
 #include <DHT.h>;
-#include <AESLib.h>
+
+#include "LoRaNet.h"
 
 #define QUEUE_SIZE 10
 #define ADJ_PING_INTERVAL 30000
-#define ADJ_LIST_SIZE 10
 #define TX_INTERVAL 10000
 #define TICK_INTERVAL 100
 #define RANDOM_RANGE 2000
@@ -40,10 +39,11 @@ void setup() {
   // Start Serial
   Serial.begin(9600);
   while (!Serial);
-  Serial.println("LoRa Arduino Nano Node -- Proto w/ Compression --");
+  Serial.println("LoRa Arduino Nano Node <PROTO> --");
 
   
   // Start LoRa 
+  Serial.println("Starting LoRa...");
   if (!LoRa.begin(433E6)) {
     Serial.println("Starting LoRa failed!");
     while (true);
@@ -55,6 +55,7 @@ void setup() {
   // Sensors Init
   dht.begin();
 
+  Lib::init();
   Serial.println("Starting.");
 }
 
@@ -68,21 +69,21 @@ void onReceive (int packetSize) {
     return;
   }
 
-  Serial.print("header: ");
+  Serial.print("RECV. header: ");
   Serial.print(header);
   Serial.print(", srcId: "); Serial.print(srcId);
   Serial.print(", pId: "); Serial.print(pId);
   Serial.print(", ");
   // If MSG srcID is self, meaning echo, drop.
   if (srcId == nodeId) {
-    Serial.print("Echoed packet, dropping.\n"); return;
+    Serial.print("Echoed.\n"); return;
   }
 
   // If MSG ID is repeat or outdated, drop.
   int lastPktId = packetIdRecord.get(srcId);
-  Serial.print("LastPktId:"); Serial.print(lastPktId); Serial.print(". ");
+  Serial.print("LastId:"); Serial.print(lastPktId); Serial.print(". ");
   if (lastPktId != -1 && lastPktId >= pId) {
-    Serial.print("Outdated packet, dropping.\n"); return;
+    Serial.print("Outdated.\n"); return;
   }
   // keep track of packets lost
   if (lastPktId != -1) 
@@ -101,21 +102,22 @@ void onReceive (int packetSize) {
   }
 
   // Store in queue
-  Serial.print("New Msg. Queuing for forward. ");
+  Serial.print("New, queuing. ");
   if (queueCnt >= QUEUE_SIZE) {
-    Serial.print("Queue full, dropping.\n"); return;
+    Serial.print("queue full.\n"); return;
   }
   
-
   // Copy from msg buf.
   char* buf = (char*) malloc(packetSize); 
   memcpy(buf, msgbuf, packetSize);
+  /*
   Serial.print("Queued: [");
   for (int i=0; i<packetSize; i++) {
     Serial.print((uint8_t) buf[i]);
     Serial.print(", ");
   }
   Serial.println("]");  forwardLen[queueCnt++] = packetSize;
+  */
   forward[queueCnt++] = buf;
 
   Serial.println();
@@ -140,20 +142,11 @@ void loop() {
 
     uint16_t len;
     char* msg = Lib::encodePacket(&packet, &len);
-    //uint16_t len = sizeof(msg);
 
     delay(100);
     LoRa.beginPacket();
     LoRa.write(msg, len);
     LoRa.endPacket();
-
-    
-    Serial.print("MSG: [");
-    for (int i=0; i<len; i++) {
-      Serial.print((uint8_t) msg[i]);
-      Serial.print(", ");
-    }
-    Serial.println("]");
 
     Serial.print("Packets Lost: ");
     Serial.println(packets_lost);
@@ -169,27 +162,12 @@ void loop() {
   if (adj_ping_tick-- == 0) {
     uint16_t len = adjacencies_cnt;
     char* msg = Lib::constructAdjPkt (nodeId, packetId++, adjacencies, &len);
+    Serial.println(); // The function above does not print '\n'.
 
     delay(100);
     LoRa.beginPacket();
     LoRa.write(msg, len);
     LoRa.endPacket();
-   
-    Serial.print("Sent ADJ list ping: [");
-    for (int i=0; i<adjacencies_cnt; i++) {
-      Serial.print(adjacencies[i]);
-      Serial.print(", ");
-    }
-    Serial.println("]");
-
-    
-    Serial.print("MSG: [");
-    for (int i=0; i<len; i++) {
-      Serial.print((uint8_t) msg[i]);
-      Serial.print(", ");
-    }
-    Serial.println("]");
-    
 
     free(msg);
     delay(100);
@@ -205,7 +183,7 @@ void loop() {
     char* msg = forward[i];
     uint16_t len = forwardLen[i];
 
-  
+    /*
     Serial.print("Forwarded: len: ");
     Serial.print(len);
     Serial.print(", [");
@@ -214,13 +192,13 @@ void loop() {
       Serial.print(", ");
     }
     Serial.println("]");
-    
+    */
     
     LoRa.beginPacket();
     LoRa.write(msg, len);
     LoRa.endPacket();
 
-    // Dealloc Packet Object & String
+    // Dealloc Packet Object & String 
     free(forward[i]);
   }
   if (queueCnt) {

@@ -2,12 +2,11 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
-
-#include "LoRaNet.h";
- 
 #include <SPI.h>
 #include <LoRa.h>
- 
+
+#include "LoRaNet.h";
+#include "base64.hpp"
 
 #define WIFI_SSID "Puffin2"
 #define WIFI_PASS "0919915740"
@@ -24,13 +23,13 @@
 
 Map packetIdRecord;
 uint16_t gatewayId;
+uint16_t packetId = 1;
 
 uint8_t adjacencies_cnt = 0;
 uint16_t adjacencies[ADJ_LIST_SIZE];
 uint16_t adj_ping_tick = 0;
 
 uint16_t packets_lost = 0;
-
 
 
 void setup() {
@@ -40,16 +39,17 @@ void setup() {
   // Start Serial
   Serial.begin(9600);
   while (!Serial);
-  Serial.println("=== LoRa ESP-8266 Gateway -- Proto ===");
+  Serial.println("=== LoRa ESP-8266 Gateway <PROTO> ===");
 
   // Start WiFi
-  WiFi.begin(WIFI_SSID, WIFI_PASS);   
+  Serial.println("Starting WiFi connection...");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.println("Waiting for connection");
   }
-
+  
   // Start LoRa 
+  Serial.println("Starting LoRa...");
   LoRa.setPins(SS, RST, DIO0);
   if (!LoRa.begin(433E6)) {
     Serial.println("Starting LoRa failed!");
@@ -59,6 +59,7 @@ void setup() {
   LoRa.onReceive(onReceive);
   LoRa.receive();
 
+  Lib::init();
   Serial.println("Starting.");
 }
 
@@ -72,21 +73,19 @@ void onReceive (int packetSize) {
     return;
   }
 
-  Serial.print("header: ");
+  Serial.print("RECV. header: ");
   Serial.print(header);
   Serial.print(", srcId: "); Serial.print(srcId);
   Serial.print(", pId: "); Serial.print(pId);
   Serial.print(", ");
-  // If MSG srcID is self, meaning echo, drop.
-  if (srcId == nodeId) {
-    Serial.print("Echoed packet, dropping.\n"); return;
-  }
+  
 
   // If MSG ID is repeat or outdated, drop.
   int lastPktId = packetIdRecord.get(srcId);
-  Serial.print("LastPktId:"); Serial.print(lastPktId); Serial.print(". ");
+  Serial.print("LastId:"); Serial.print(lastPktId); Serial.print(". ");
   if (lastPktId != -1 && lastPktId >= pId) {
-    Serial.print("Outdated packet, dropping.\n"); return;
+    Serial.print("Outdated.\n"); 
+    return;
   }
   // keep track of packets lost
   if (lastPktId != -1) 
@@ -105,16 +104,18 @@ void onReceive (int packetSize) {
   }
 
   // POST
-  Serial.print("New Msg. Queuing for forward. \n");
+  Serial.print("POST-ing. msg: ");
+  uint16_t enc_len = BASE64::encodeLength(msglen);
+  char buf[enc_len];
+  BASE64::encode((uint8_t*) dec_msgbuf, msglen, buf);
+  Serial.println(buf);
 
-  char buf* = Lib::encodePacketForHTTP();
   POST(buf);
-  free(buf);
 }
 
 // Takes a null-terminated char array as a pointer.
 void POST (char* buf) {
-  Serial.print("Posting.. ");
+  //Serial.print("Posting.. ");
   WiFiClient client;
   HTTPClient http;    //Declare object of class HTTPClient
 
@@ -125,10 +126,12 @@ void POST (char* buf) {
 
   String payload = http.getString();                  //Get the response payload
 
+  /*
   Serial.print("Code: ");
   Serial.print(httpCode);   //Print HTTP return code
   Serial.print(", Res: ");
   Serial.println(payload);    //Print request response payload
+  */
 
   http.end();  //Close connection
 }
@@ -144,16 +147,15 @@ void loop() {
   // TX if adjacency list ping tick is up. 
   if (adj_ping_tick-- == 0) {
     uint16_t len = adjacencies_cnt;
-    char* msg = Lib::constructGatewayAdjPkt(gateway, packetId++, adjacencies, &len);
-    POST(msg);
+    char* msg = Lib::constructAdjPkt(gatewayId, packetId++, adjacencies, &len, true); 
+
+    uint16_t enc_len = BASE64::encodeLength(len); // Encode into b64
+    char buf[enc_len];
+    BASE64::encode((uint8_t*) msg, len, buf);
     free(msg);
-    
-    Serial.print("Sent ADJ list ping: [");
-    for (int i=0; i<adjacencies_cnt; i++) {
-      Serial.print(adjacencies[i]);
-      Serial.print(", ");
-    }
-    Serial.println("]");
+    Serial.println(buf);
+
+    POST(buf);
 
     adjacencies_cnt = 0;
     adj_ping_tick = (ADJ_PING_INTERVAL + random(0, RANDOM_RANGE)) / TICK_INTERVAL;
