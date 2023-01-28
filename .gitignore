@@ -1,8 +1,6 @@
 .DS_store
 
-Legacy/pinet-proto1
-Legacy/pinet-proto1/*
+_legacy/*
 
-proto/gateway-lib-proto/node_modules/*
-proto/gateway-lib-proto/package-lock.json
-proto/gateway-lib-proto/package.json
+server-proto/node_modules/*
+
