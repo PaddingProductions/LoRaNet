@@ -48,17 +48,20 @@ app.post("/test", (req, res) => {
     case 1:
       const temp = intFromBytes(buf, hdr_len + 0, 1);
       const humidity = intFromBytes(buf, hdr_len + 1, 1);
+      const mq2 = intFromBytes(buf, hdr_len + 2, 2);
 
       // Store
       if (!(srcId in db)) db[srcId] = {};
-      db[srcId].data = { packetId: packetId, temp: temp, humidity: humidity };
+      db[srcId].data = { packetId: packetId, temp: temp, humidity: humidity, mq2: mq2 };
       console.log(
-        "Storing db[%d].data = {%d: {temp: %d, humidity: %d}}",
+        "Storing db[%d].data = {%d: {temp: %d, humidity: %d, mq2: %d}}",
         srcId,
         packetId,
         temp,
-        humidity
+        humidity,
+        mq2
       );
+
       res.send("ACK from Node.js");
       break;
     case 2:
@@ -77,6 +80,7 @@ app.post("/test", (req, res) => {
         packetId,
         adj.toString()
       );
+      
       res.send("ACK from Node.js");
       break;
     default:

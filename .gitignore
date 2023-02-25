@@ -1,6 +1,5 @@
 .DS_store
-
-_legacy/*
-
-server-proto/node_modules/*
+_legacy
+server-proto/node_modules
+LoRaBase
 

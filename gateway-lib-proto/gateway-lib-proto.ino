@@ -60,6 +60,29 @@ void setup() {
   LoRa.receive();
 
   Lib::init();
+
+  // POST node spawn message
+  {
+    WiFiClient client;
+    HTTPClient http;    //Declare object of class HTTPClient
+    char URL[100];
+    sprintf(URL, "http://192.168.4.120:3000/api/node?id=%d&longitude=%.3f&latitude=%.3f&gateway=true", gatewayId, 12.3, 45.6);
+
+    Serial.print("Sending gateway PUT request... URL: ");
+    Serial.println(URL);
+    http.begin(client, URL);
+    http.addHeader("Content-Type", "text/plain");  //Specify content-type header
+
+    int httpCode = http.PUT();
+    if (httpCode != 201) {
+      Serial.println(httpCode);
+      Serial.println(http.getString());
+      Serial.println("Error on spawn request, halting.");
+      while(1) delay (1000);
+    }
+    http.end();  //Close connection
+  }
+
   Serial.println("Starting.");
 }
 
@@ -115,23 +138,21 @@ void onReceive (int packetSize) {
 
 // Takes a null-terminated char array as a pointer.
 void POST (char* buf) {
-  //Serial.print("Posting.. ");
   WiFiClient client;
   HTTPClient http;    //Declare object of class HTTPClient
 
-  http.begin(client, "http://192.168.4.120:8282/test");      //Specify request destination
+  http.begin(client, "http://192.168.4.120:3000/api/packet");      //Specify request destination
   http.addHeader("Content-Type", "text/plain");  //Specify content-type header
 
   int httpCode = http.POST(buf);   //Send the request
 
-  String payload = http.getString();                  //Get the response payload
+  String payload = http.getString();  //Get the response payload
 
-  /*
+  
   Serial.print("Code: ");
   Serial.print(httpCode);   //Print HTTP return code
   Serial.print(", Res: ");
   Serial.println(payload);    //Print request response payload
-  */
 
   http.end();  //Close connection
 }
