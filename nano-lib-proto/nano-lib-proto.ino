@@ -7,8 +7,8 @@
 #include "MQ2.h"
 
 #define QUEUE_SIZE 10
-#define ADJ_PING_INTERVAL 30000
-#define TX_INTERVAL 10000
+#define ADJ_PING_INTERVAL 40000
+#define TX_INTERVAL 20000
 #define TICK_INTERVAL 100
 #define RANDOM_RANGE 2000
 
@@ -45,7 +45,7 @@ void setup() {
   EEPROM.get(EEPROM_ADDR_ID, nodeId);
   for (int i=0; i<10; i++) {
     EEPROM.get(EEPROM_ADDR_BLACKLIST + i*2, blacklist[i]);
-    if (blacklist[i] == 0) return;
+    if (blacklist[i] == 0) break;
   }
 #else 
   // Generated configs on deploy
@@ -83,14 +83,18 @@ void onReceive (int packetSize) {
   // Parse msg
   uint8_t header;
   uint16_t srcId;
+  uint16_t prevId;
   uint16_t pId;
-  if (!Lib::parsePacket(packetSize, &header, &srcId, &pId)) {
+  uint16_t len;
+
+  if (!Lib::parsePacket(packetSize, &header, &srcId, &prevId, &pId, &len)) {
     return;
   }
 
   Serial.print("RECV. header: ");
   Serial.print(header);
   Serial.print(", srcId: "); Serial.print(srcId);
+  Serial.print(", prevID: "); Serial.print(srcId);
   Serial.print(", pId: "); Serial.print(pId);
   Serial.print(", ");
 
@@ -102,8 +106,8 @@ void onReceive (int packetSize) {
 #ifdef TEST
   // If MSG srcID is blacklisted (topology testing)
   for (int i=0; i<10; i++) 
-    if (srcId == blacklist[i]) {
-      Serial.print("Blocked srcID.\n"); return;
+    if (prevId == blacklist[i]) {
+      Serial.print("Blocked prevID.\n"); return;
     }
 #endif
 
@@ -136,9 +140,9 @@ void onReceive (int packetSize) {
   }
   
   // Copy from msg buf.
-  char* buf = (char*) malloc(packetSize); 
-  memcpy(buf, msgbuf, packetSize);
-  forward[queueCnt++] = buf;
+  uint16_t t;
+  forward[queueCnt] = Lib::getForwardBuf(nodeId, len);
+  forwardLen[queueCnt++] = len;
 
   Serial.println();
 }
@@ -149,6 +153,7 @@ uint16_t tick = 0;
 void loop() {
   Serial.flush();
   // TX if tick counter up.
+  
   if (tick-- == 0) {
 
 #ifdef USING_SENSORS
@@ -163,6 +168,7 @@ void loop() {
 
     Packet packet;
     packet.srcId = nodeId;
+    packet.prevId = nodeId;
     packet.id = packetId++;
     packet.humidity = humidity;
     packet.temp = temp;
@@ -203,6 +209,7 @@ void loop() {
     adjacencies_cnt = 0;
     adj_ping_tick = (ADJ_PING_INTERVAL + random(0, RANDOM_RANGE)) / TICK_INTERVAL;
   }
+  
 
   // If queue
   if (queueCnt) 
@@ -210,7 +217,20 @@ void loop() {
   for (int i=0; i<queueCnt; i++) {
     char* msg = forward[i];
     uint16_t len = forwardLen[i];
-    
+
+    Serial.print("Fowarding For: ");
+    Serial.print((uint8_t) msg[0]);
+    Serial.print(", [");  
+    Serial.print((uint8_t) msg[1]);
+    Serial.print(", ");
+    Serial.print((uint8_t) msg[2]);
+    Serial.print("] === [");
+    Serial.print((uint8_t) msg[3]);
+    Serial.print(", ");
+    Serial.print((uint8_t) msg[4]);
+    Serial.println("]");
+
+    delay(100);
     LoRa.beginPacket();
     LoRa.write(msg, len);
     LoRa.endPacket();

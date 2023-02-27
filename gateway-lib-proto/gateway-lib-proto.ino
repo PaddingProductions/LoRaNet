@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <EEPROM.h>
+
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
@@ -21,6 +23,8 @@
 #define RST 16
 #define DIO0 2
 
+#define TEST
+
 Map packetIdRecord;
 uint16_t gatewayId;
 uint16_t packetId = 1;
@@ -30,22 +34,36 @@ uint16_t adjacencies[ADJ_LIST_SIZE];
 uint16_t adj_ping_tick = 0;
 
 uint16_t packets_lost = 0;
-
+uint16_t blacklist[10] = {0};
 
 void setup() {
   // Randomize seed
   randomSeed(analogRead(0));
-  gatewayId = random(1, 10000);
+#ifdef TEST 
+  // Read configs from EEPROM
+  EEPROM.begin(64);
+  EEPROM.get(EEPROM_ADDR_ID, gatewayId);
+  for (int i=0; i<10; i++) {
+    EEPROM.get(EEPROM_ADDR_BLACKLIST + i*2, blacklist[i]);
+    if (blacklist[i] == 0) break;
+  }
+#else 
+  // Generated configs on deploy
+  nodeId = random(1, 10000);
+#endif 
+
   // Start Serial
   Serial.begin(9600);
   while (!Serial);
   Serial.println("=== LoRa ESP-8266 Gateway <PROTO> ===");
 
   // Start WiFi
-  Serial.println("Starting WiFi connection...");
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  {
+  	
+    Serial.println("Starting WiFi connection...");
+    WiFi.begin(wifi_ssid, wifi_pass);
+    while (WiFi.status() != WL_CONNECTED) 
+      delay(500);
   }
   
   // Start LoRa 
@@ -73,7 +91,7 @@ void setup() {
     http.begin(client, URL);
     http.addHeader("Content-Type", "text/plain");  //Specify content-type header
 
-    int httpCode = http.PUT();
+    int httpCode = http.PUT("");
     if (httpCode != 201) {
       Serial.println(httpCode);
       Serial.println(http.getString());
@@ -91,17 +109,29 @@ void onReceive (int packetSize) {
   // Parse msg
   uint8_t header;
   uint16_t srcId;
+  uint16_t prevId;
   uint16_t pId;
-  if (!Lib::parsePacket(packetSize, &header, &srcId, &pId)) {
+  uint16_t len;
+
+  if (!Lib::parsePacket(packetSize, &header, &srcId, &prevId, &pId, &len)) {
     return;
   }
 
   Serial.print("RECV. header: ");
   Serial.print(header);
-  Serial.print(", srcId: "); Serial.print(srcId);
+  Serial.print(", src: ");
+  Serial.print(srcId);
+  Serial.print(" ===== "); Serial.print(prevId);
   Serial.print(", pId: "); Serial.print(pId);
   Serial.print(", ");
   
+#ifdef TEST
+  // If MSG srcID is blacklisted (topology testing)
+  for (int i=0; i<10; i++) 
+    if (prevId == blacklist[i]) {
+      Serial.print("Blocked prevID.\n"); return;
+    }
+#endif
 
   // If MSG ID is repeat or outdated, drop.
   int lastPktId = packetIdRecord.get(srcId);
@@ -128,9 +158,9 @@ void onReceive (int packetSize) {
 
   // POST
   Serial.print("POST-ing. msg: ");
-  uint16_t enc_len = BASE64::encodeLength(msglen);
+  uint16_t enc_len = BASE64::encodeLength(len);
   char buf[enc_len];
-  BASE64::encode((uint8_t*) dec_msgbuf, msglen, buf);
+  BASE64::encode((uint8_t*) msgbuf, len, buf);
   Serial.println(buf);
 
   POST(buf);
