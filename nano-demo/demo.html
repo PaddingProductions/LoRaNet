@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+	*{font-family: Arial}
+	#colorbox{border-radius: 1rem; margin: auto; width: 100px; height: 100px; background: #eee}
+	#loading-txt{display: flex; justify-content: center; font-weight:bold; font-size: 2rem}
+</style>
+</head>
+
+<body>
+<h1 style="display: flex; justify-content: center">Sensor Node Demonstration Page</h1>
+<p  style="display: flex; justify-content: center">This block will become red once the button is pressed</p>
+<div id="loading-txt">.</div>
+<div id="colorbox"></div>
+
+<script>
+const loadingTxt = document.getElementById("loading-txt");
+const colorbox = document.getElementById("colorbox");
+
+const f = async () => {
+	console.log("fetching..");
+	loadingTxt.innerText += ".";
+	if (loadingTxt.innerText.length > 5) loadingTxt.innerText = ".";
+
+	const histories = await fetch("http://localhost:3033/api/history").then(res => res.json()).catch(console.error);
+	console.log(histories);
+	
+	let button = false;
+	for (let id in histories) {
+		if (histories[id].temp == 100) {
+			button = true;
+		}
+	}	
+	if (button) {
+		colorbox.style.backgroundColor = "#f11";
+		console.log("button!!");
+	} else {
+		colorbox.style.backgroundColor = "#eee";
+	}
+
+	setTimeout(f, 1000);
+}
+f();
+
+</script>
+</body>
+</html>
