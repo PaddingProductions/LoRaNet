@@ -10,8 +10,8 @@
 #include "LoRaNet.h";
 #include "base64.hpp"
 
-#define WIFI_SSID "Puffin2"
-#define WIFI_PASS "0919915740"
+#define WIFI_SSID "My-Network"
+#define WIFI_PASS "HappySparky"
 
 #define QUEUE_SIZE 10
 #define ADJ_PING_INTERVAL 30000
@@ -39,12 +39,14 @@ uint16_t blacklist[10] = {0};
 void setup() {
   // Randomize seed
   randomSeed(analogRead(0));
+
 #ifdef TEST 
   // Read configs from EEPROM
   EEPROM.begin(64);
   EEPROM.get(EEPROM_ADDR_ID, gatewayId);
   for (int i=0; i<10; i++) {
     EEPROM.get(EEPROM_ADDR_BLACKLIST + i*2, blacklist[i]);
+    Serial.println(blacklist[i]);
     if (blacklist[i] == 0) break;
   }
 #else 
@@ -61,7 +63,7 @@ void setup() {
   {
   	
     Serial.println("Starting WiFi connection...");
-    WiFi.begin(wifi_ssid, wifi_pass);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
     while (WiFi.status() != WL_CONNECTED) 
       delay(500);
   }
@@ -80,11 +82,12 @@ void setup() {
   Lib::init();
 
   // POST node spawn message
+  /*
   {
     WiFiClient client;
     HTTPClient http;    //Declare object of class HTTPClient
     char URL[100];
-    sprintf(URL, "http://192.168.4.120:3000/api/node?id=%d&longitude=%.3f&latitude=%.3f&gateway=true", gatewayId, 12.3, 45.6);
+    sprintf(URL, "http://172.20.10.3:3033/api/node?id=%d&longitude=%.3f&latitude=%.3f&gateway=true", gatewayId, 12.3, 45.6);
 
     Serial.print("Sending gateway PUT request... URL: ");
     Serial.println(URL);
@@ -100,6 +103,7 @@ void setup() {
     }
     http.end();  //Close connection
   }
+  */
 
   Serial.println("Starting.");
 }
@@ -126,11 +130,13 @@ void onReceive (int packetSize) {
   Serial.print(", ");
   
 #ifdef TEST
+/*
   // If MSG srcID is blacklisted (topology testing)
   for (int i=0; i<10; i++) 
     if (prevId == blacklist[i]) {
       Serial.print("Blocked prevID.\n"); return;
     }
+*/
 #endif
 
   // If MSG ID is repeat or outdated, drop.
@@ -171,7 +177,7 @@ void POST (char* buf) {
   WiFiClient client;
   HTTPClient http;    //Declare object of class HTTPClient
 
-  http.begin(client, "http://192.168.4.120:3000/api/packet");      //Specify request destination
+  http.begin(client, "http://172.20.10.3:3033/api/packet");      //Specify request destination
   http.addHeader("Content-Type", "text/plain");  //Specify content-type header
 
   int httpCode = http.POST(buf);   //Send the request

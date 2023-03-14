@@ -8,15 +8,15 @@
 
 #define QUEUE_SIZE 10
 #define ADJ_PING_INTERVAL 40000
-#define TX_INTERVAL 20000
+#define TX_INTERVAL 10000
 #define TICK_INTERVAL 100
 #define RANDOM_RANGE 2000
 
 #define USING_SENSORS
 #define TEST
 
-#define MQ2_PIN A5
-#define DHTPIN 7
+#define MQ2_PIN A7
+#define DHTPIN 4
 #define DHTTYPE DHT22
 
 DHT dht(DHTPIN, DHTTYPE);
